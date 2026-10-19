@@ -192,7 +192,7 @@ async function selectProject(id) {
   const has = !!id;
   $('#noProjects').hidden = has;
   $('#board').hidden = !has; $('#sub').hidden = !has;
-  ['#q', '#who', '#newTask'].forEach(s => $(s).disabled = !has);
+  ['#q', '#who', '#newTask'].forEach(s => { $(s).disabled = !has; $(s).hidden = !has; });
   if (!has) { teardownProjectChannel(); return; }
   await loadBoard();
   subscribeProject(id);
