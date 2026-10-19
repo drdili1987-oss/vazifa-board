@@ -117,10 +117,23 @@ dialog::backdrop{background:rgba(10,15,12,.45)}
 .toast.show{opacity:1;transform:translateX(-50%)}
 
 @media (max-width:640px){
+  /* Compact 2-row header: [logo | tabs | avatar] / [search | filter | +] */
+  .top{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;
+    grid-template-areas:"logo tabs tabs me" "q q who new";gap:8px 10px}
+  .top .logo{grid-area:logo}
+  .top .tabs{grid-area:tabs}
+  .tools{display:contents}
+  #q{grid-area:q;width:100%;min-width:0;box-sizing:border-box}
+  #who{grid-area:who;max-width:120px}
+  #newTask{grid-area:new;white-space:nowrap}
+  #meBtn{grid-area:me}
+  .menu{top:calc(52px + env(safe-area-inset-top,0px))}
+  .sub{padding-block:10px 4px}
+  .sub h1{font-size:18px}
+  /* iOS Safari / Telegram zoom into inputs under 16px and stay zoomed — prevent it */
+  input,select,textarea{font-size:16px}
   .board{scroll-snap-type:x mandatory}
   .col,.add-col{flex-basis:84vw;scroll-snap-align:center}
-  .search{flex:1;width:auto}
-  .tools{width:100%}
   .grid2{grid-template-columns:1fr}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}.ghost{transform:none}}
