@@ -162,3 +162,4 @@ dialog::backdrop{background:rgba(10,15,12,.45)}
 .sync.off{background:var(--muted)}
 .card.saving{opacity:.7}
 @media (prefers-reduced-motion:reduce){.spin{animation-duration:2s}}
+.gsi-slot{display:flex;justify-content:center;min-height:44px;width:100%}

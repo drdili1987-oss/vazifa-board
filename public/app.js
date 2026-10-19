@@ -71,6 +71,58 @@ function show(view) {
 }
 
 // ---------- auth ----------
+// Primary: Google Identity Services button on our own origin → ID token → Supabase.
+// The consent dialog shows this site's domain instead of the Supabase project URL.
+const GOOGLE_CLIENT_ID = window.VAZIFA_CONFIG.googleClientId;
+let rawNonce = null;
+
+async function sha256Hex(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+function randomNonce() {
+  const a = new Uint8Array(32); crypto.getRandomValues(a);
+  return btoa(String.fromCharCode(...a)).replace(/[^a-zA-Z0-9]/g, '');
+}
+
+async function onGoogleCredential(resp) {
+  $('#loginErr').textContent = '';
+  const nonce = rawNonce;
+  const { error } = await sb.auth.signInWithIdToken({ provider: 'google', token: resp.credential, nonce });
+  if (error) { $('#loginErr').textContent = error.message; renderGsiButton(); }
+  // success → onAuthStateChange takes over
+}
+
+let gsiWait = 0;
+async function renderGsiButton() {
+  const slot = $('#gsiBtn');
+  if (!window.google?.accounts?.id) {
+    // GIS script still loading; after ~6s assume blocked and show redirect fallback
+    if (++gsiWait > 30) { slot.hidden = true; $('#googleBtn').hidden = false; return; }
+    return setTimeout(renderGsiButton, 200);
+  }
+  const nonce = randomNonce();
+  rawNonce = nonce;
+  const hashed = await sha256Hex(nonce);
+  if (rawNonce !== nonce) return; // a newer render superseded this one
+  google.accounts.id.initialize({
+    client_id: GOOGLE_CLIENT_ID,
+    callback: onGoogleCredential,
+    nonce: hashed, // Google gets the hash, Supabase verifies with the raw value
+    ux_mode: 'popup',
+    use_fedcm_for_prompt: true,
+    itp_support: true,
+  });
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+  slot.innerHTML = '';
+  google.accounts.id.renderButton(slot, {
+    type: 'standard', theme: dark ? 'filled_black' : 'outline', size: 'large',
+    text: 'signin_with', shape: 'pill', logo_alignment: 'center',
+    width: Math.min(320, slot.clientWidth || 320),
+  });
+}
+
+// Fallback: classic OAuth redirect via Supabase (used only if GIS fails to load)
 $('#googleBtn').addEventListener('click', async () => {
   const btn = $('#googleBtn');
   btn.disabled = true; $('#loginErr').textContent = '';
@@ -84,6 +136,7 @@ $('#googleBtn').addEventListener('click', async () => {
 async function logout() {
   $('#menu').hidden = true;
   teardownRealtime();
+  try { window.google?.accounts?.id?.disableAutoSelect(); } catch {}
   await sb.auth.signOut();
 }
 
@@ -103,6 +156,7 @@ async function handleSession(session) {
     if (err) { $('#loginErr').textContent = err; history.replaceState(null, '', location.pathname); }
     $('#googleBtn').disabled = false;
     show('login');
+    renderGsiButton();
     return;
   }
   if (booted && S.user?.id === user.id) { S.user = user; return; } // token refresh
