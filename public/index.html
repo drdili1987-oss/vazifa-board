@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Vazifa Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Unbounded:wght@600&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="styles.css">
+<style>
+  :root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);box-sizing:border-box}
+  body{margin:0}
+  [hidden]{display:none!important}
+</style>
+</head>
+<body>
+
+<!-- Loading -->
+<div class="loading" id="viewLoading"><div class="spin" aria-label="Yuklanmoqda"></div></div>
+
+<!-- Login -->
+<section class="login" id="viewLogin" hidden>
+  <div class="login-card">
+    <div class="logo"><i><b></b><b></b><b></b><b></b></i>Vazifa</div>
+    <p>Jamoangiz vazifalarini bitta board'da boshqaring. Davom etish uchun Google hisobingiz bilan kiring.</p>
+    <button class="google-btn" id="googleBtn" type="button">
+      <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3 0 5.8 1.1 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>
+      Google bilan kirish
+    </button>
+    <div class="err" id="loginErr" role="alert"></div>
+  </div>
+</section>
+
+<!-- App -->
+<div id="viewApp" hidden style="display:flex;flex-direction:column;flex:1;min-height:0">
+  <header class="top">
+    <div class="logo"><i><b></b><b></b><b></b><b></b></i>Vazifa</div>
+    <nav class="tabs" id="tabs" role="tablist" aria-label="Loyihalar"></nav>
+    <div class="tools">
+      <input id="q" class="search" type="search" placeholder="Qidirish…" aria-label="Vazifalarni qidirish">
+      <select id="who" class="sel" aria-label="Mas'ul bo'yicha filtr"></select>
+      <button id="newTask" class="btn primary">+ Vazifa</button>
+      <button class="me" id="meBtn" aria-label="Hisob" aria-haspopup="menu"></button>
+    </div>
+  </header>
+  <div class="menu" id="menu" role="menu" hidden>
+    <div class="who" id="menuWho"></div>
+    <button role="menuitem" id="mMembers">Loyiha a'zolari</button>
+    <button role="menuitem" id="mLogout">Chiqish</button>
+  </div>
+
+  <div class="sub" id="sub">
+    <h1 id="pname"></h1>
+    <div class="stats" id="stats"></div>
+    <span class="sync off" id="sync" title="Real-time ulanish"></span>
+  </div>
+  <main class="board" id="board"></main>
+  <div class="empty-state" id="noProjects" hidden>
+    <div>
+      <h2 style="margin:0">Hali loyiha yo'q</h2>
+      <p>Birinchi loyihangizni yarating yoki jamoadoshingizdan sizni loyihaga qo'shishini so'rang.</p>
+      <button class="btn primary" id="firstProject">+ Loyiha yaratish</button>
+    </div>
+  </div>
+</div>
+
+<!-- Task dialog -->
+<dialog id="taskDlg">
+  <form class="dlg" id="taskForm" method="dialog">
+    <div class="field"><label for="fTitle">Nomi</label><input id="fTitle" class="title-input" required maxlength="200"></div>
+    <div class="field"><label for="fDesc">Tavsif</label><textarea id="fDesc" maxlength="4000" placeholder="Batafsil ma'lumot…"></textarea></div>
+    <div class="grid2">
+      <div class="field"><label for="fCol">Holat</label><select id="fCol"></select></div>
+      <div class="field"><label for="fWho">Mas'ul</label><select id="fWho"></select></div>
+      <div class="field"><label for="fDue">Muddat</label><input id="fDue" type="date"></div>
+      <div class="field"><label for="fPrio">Muhimlik</label>
+        <select id="fPrio"><option value="">Yo'q</option><option value="high">Yuqori</option><option value="mid">O'rta</option><option value="low">Past</option></select></div>
+    </div>
+    <div class="field"><label for="fTags">Teglar (vergul bilan)</label><input id="fTags" placeholder="dizayn, frontend"></div>
+    <div class="actions">
+      <button type="button" class="btn danger" id="delTask">O'chirish</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn" id="cancelTask">Bekor qilish</button>
+      <button type="submit" class="btn primary">Saqlash</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Name dialog -->
+<dialog id="nameDlg">
+  <form class="dlg" id="nameForm" method="dialog">
+    <h2 id="nameTitle"></h2>
+    <div class="field"><label for="fName">Nomi</label><input id="fName" required maxlength="60"></div>
+    <div class="actions"><button type="button" class="btn" id="cancelName">Bekor qilish</button><button type="submit" class="btn primary">Yaratish</button></div>
+  </form>
+</dialog>
+
+<!-- Members dialog -->
+<dialog id="memDlg">
+  <form class="dlg" id="memForm">
+    <h2>Loyiha a'zolari</h2>
+    <div class="members" id="memList"></div>
+    <div class="field" id="inviteBox">
+      <label for="fEmail">A'zo qo'shish (Gmail)</label>
+      <div class="row"><input id="fEmail" type="email" placeholder="ism@gmail.com" autocomplete="off"><button class="btn primary" type="submit">Qo'shish</button></div>
+      <div class="hint">Foydalanuvchi avval saytga Google bilan bir marta kirgan bo'lishi kerak.</div>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn danger" id="projDanger"></button>
+      <span class="spacer"></span>
+      <button type="button" class="btn" id="closeMem">Yopish</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
