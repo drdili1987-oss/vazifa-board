@@ -41,7 +41,10 @@ const S = {
   members: [],   // [{user_id, role, profile:{id,email,full_name,avatar_url}}]
   columns: [],
   tasks: [],
+  msgCounts: {}, // task_id -> xabarlar soni
 };
+// Ochiq vazifa chati
+const chat = { taskId: null, messages: [], loading: false };
 const filter = { q: '', who: '' };
 let loadSeq = 0;
 let channel = null;
@@ -201,15 +204,17 @@ async function selectProject(id) {
 async function loadBoard() {
   const id = S.activeId; if (!id) return;
   const seq = ++loadSeq;
-  const [m, c, t] = await Promise.all([
+  const [m, c, t, n] = await Promise.all([
     sb.from('project_members').select('user_id, role, profile:profiles(id,email,full_name,avatar_url)').eq('project_id', id),
     sb.from('columns').select('*').eq('project_id', id).order('position'),
     sb.from('tasks').select('*').eq('project_id', id).order('position'),
+    sb.rpc('task_message_counts', { p_project: id }),
   ]);
   if (seq !== loadSeq || id !== S.activeId) return; // stale response
   const error = m.error || c.error || t.error;
   if (error) return fail(error, 'Board\'ni yuklab bo\'lmadi');
   S.members = m.data; S.columns = c.data; S.tasks = t.data;
+  if (!n.error) S.msgCounts = Object.fromEntries(n.data.map(r => [r.task_id, Number(r.n)]));
   render();
 }
 
@@ -232,6 +237,9 @@ function subscribeProject(id) {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: f }, scheduleReload)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'columns', filter: f }, scheduleReload)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'project_members', filter: f }, onMembersChange)
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'task_messages', filter: f }, p => onMessageInsert(p.new))
+    // DELETE hodisalarida Realtime filter ishlamaydi va faqat id keladi: o'zimiz tekshiramiz
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'task_messages' }, p => onMessageDelete(p.old?.id))
     .subscribe(status => { $('#sync').classList.toggle('off', status !== 'SUBSCRIBED'); });
 }
 async function onMembersChange(payload) {
@@ -286,9 +294,23 @@ function cardHTML(t, done) {
       ${t.priority ? `<span class="prio ${t.priority}">${PRIO_LABEL[t.priority]}</span>` : ''}
       ${dueInfo(t.due_date, done)}
       ${t.description ? `<span class="desc-flag" title="Tavsif bor">≡</span>` : ''}
+      ${msgFlag(t.id)}
       ${avatarHTML(profileOf(t.assignee_id))}
     </div>
   </article>`;
+}
+
+function msgFlag(taskId) {
+  const n = S.msgCounts[taskId] || 0;
+  return n ? `<span class="msg-flag" data-msgs="${taskId}" title="${n} ta xabar">💬 ${n}</span>` : '';
+}
+// Board'ni qayta chizmasdan bitta kartochkadagi xabarlar sonini yangilash (drag paytida ham xavfsiz)
+function patchCardCount(taskId) {
+  const card = document.querySelector(`.card[data-id="${taskId}"]`); if (!card) return;
+  card.querySelector('.msg-flag')?.remove();
+  const html = msgFlag(taskId); if (!html) return;
+  const av = card.querySelector('.meta .av');
+  av ? av.insertAdjacentHTML('beforebegin', html) : card.querySelector('.meta')?.insertAdjacentHTML('beforeend', html);
 }
 
 function renderTabs() {
@@ -481,6 +503,7 @@ function openTask(id) {
   $('#delTask').hidden = false;
   resetDelete();
   dlg.showModal();
+  openChat(id);
 }
 
 function openNewTask() {
@@ -490,6 +513,7 @@ function openNewTask() {
   ['#fTitle', '#fDesc', '#fDue', '#fTags'].forEach(s => $(s).value = '');
   $('#fWho').value = ''; $('#fPrio').value = '';
   $('#delTask').hidden = true;
+  closeChat();
   dlg.showModal();
   $('#fTitle').focus();
 }
@@ -527,8 +551,152 @@ $('#delTask').addEventListener('click', () => {
   const id = editing.id; dlg.close(); deleteTask(id);
 });
 $('#cancelTask').addEventListener('click', () => dlg.close());
-dlg.addEventListener('close', () => { resetDelete(); flushPendingReload(); });
+dlg.addEventListener('close', () => { resetDelete(); closeChat(); flushPendingReload(); });
 dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+
+// ---------- task chat ----------
+const chatList = $('#chatList');
+const chatInput = $('#chatInput');
+
+function authorProfile(uid) {
+  if (uid && uid === S.user?.id) {
+    const meta = S.user.user_metadata || {};
+    return { id: S.user.id, email: S.user.email, full_name: meta.full_name || meta.name, avatar_url: meta.avatar_url || meta.picture };
+  }
+  return profileOf(uid);
+}
+
+function msgTime(iso) {
+  const d = new Date(iso);
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  if (ymd(d) === today()) return hm;
+  const y = d.getFullYear() !== new Date().getFullYear() ? ` ${d.getFullYear()}` : '';
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}${y}, ${hm}`;
+}
+
+function renderChat({ stick = false } = {}) {
+  const atBottom = chatList.scrollHeight - chatList.scrollTop - chatList.clientHeight < 40;
+  const n = chat.messages.filter(m => !m.pending).length;
+  $('#chatCount').textContent = n ? `${n}` : '';
+  if (chat.loading) { chatList.innerHTML = `<div class="chat-empty"><div class="spin"></div></div>`; return; }
+  if (!chat.messages.length) {
+    chatList.innerHTML = `<div class="chat-empty">Hali xabar yo'q.<br>Vazifa bo'yicha savol yoki yangilikni shu yerda yozing.</div>`;
+    return;
+  }
+  const owner = myRole() === 'owner';
+  chatList.innerHTML = chat.messages.map(m => {
+    const mine = m.user_id === S.user.id;
+    const p = authorProfile(m.user_id);
+    const canDel = !m.pending && (mine || owner);
+    return `<div class="msg${mine ? ' mine' : ''}${m.pending ? ' pending' : ''}" data-mid="${m.id}">
+      ${avatarHTML(p || { id: m.user_id || '0', full_name: "Sobiq a'zo" })}
+      <div class="msg-body">
+        <div class="msg-top"><b>${esc(p ? displayName(p) : "Sobiq a'zo")}</b><time datetime="${esc(m.created_at)}">${m.pending ? 'yuborilmoqda…' : msgTime(m.created_at)}</time>
+          ${canDel ? `<button type="button" class="icon-btn" data-del-msg="${m.id}" aria-label="Xabarni o'chirish" title="O'chirish">×</button>` : ''}</div>
+        <div class="msg-text">${esc(m.body)}</div>
+      </div>
+    </div>`;
+  }).join('');
+  if (stick || atBottom) chatList.scrollTop = chatList.scrollHeight;
+}
+
+async function openChat(taskId) {
+  chat.taskId = taskId; chat.messages = []; chat.loading = true;
+  $('#chat').hidden = false; dlg.classList.add('with-chat');
+  chatInput.value = ''; autoGrow();
+  renderChat();
+  const { data, error } = await sb.from('task_messages')
+    .select('id,task_id,user_id,body,created_at').eq('task_id', taskId)
+    .order('created_at', { ascending: false }).limit(200);
+  if (chat.taskId !== taskId) return; // boshqa vazifa ochildi
+  chat.loading = false;
+  if (error) { renderChat(); return fail(error, 'Chat yuklanmadi'); }
+  // Realtime orqali yuklash paytida kelganlarni saqlab qolamiz
+  const extra = chat.messages.filter(m => !data.some(d => d.id === m.id));
+  chat.messages = [...data.reverse(), ...extra];
+  renderChat({ stick: true });
+}
+
+function closeChat() {
+  chat.taskId = null; chat.messages = []; chat.loading = false;
+  $('#chat').hidden = true; dlg.classList.remove('with-chat');
+}
+
+const countedMsgs = new Set(); // har bir xabar soniga faqat bir marta qo'shiladi
+function onMessageInsert(m) {
+  if (!m || m.project_id !== S.activeId || countedMsgs.has(m.id)) return;
+  countedMsgs.add(m.id);
+  if (chat.taskId === m.task_id && !chat.messages.some(x => x.id === m.id)) {
+    // o'zimiz yuborgan, hali "pending" turgan nusxani almashtiramiz
+    const p = chat.messages.findIndex(x => x.pending && x.user_id === m.user_id && x.body === m.body);
+    if (p >= 0) chat.messages[p] = m; else chat.messages.push(m);
+    renderChat();
+  }
+  S.msgCounts[m.task_id] = (S.msgCounts[m.task_id] || 0) + 1;
+  patchCardCount(m.task_id);
+}
+
+function onMessageDelete(id) {
+  if (!id) return;
+  const i = chat.messages.findIndex(x => x.id === id);
+  if (i >= 0) { chat.messages.splice(i, 1); renderChat(); }
+  refreshCounts();
+}
+
+let countsTimer = null;
+function refreshCounts() {
+  clearTimeout(countsTimer);
+  countsTimer = setTimeout(async () => {
+    const pid = S.activeId; if (!pid) return;
+    const { data, error } = await sb.rpc('task_message_counts', { p_project: pid });
+    if (error || pid !== S.activeId) return;
+    const before = S.msgCounts;
+    S.msgCounts = Object.fromEntries(data.map(r => [r.task_id, Number(r.n)]));
+    new Set([...Object.keys(before), ...Object.keys(S.msgCounts)]).forEach(patchCardCount);
+  }, 300);
+}
+
+async function sendMessage() {
+  const body = chatInput.value.trim();
+  const taskId = chat.taskId;
+  if (!body || !taskId) return;
+  chatInput.value = ''; autoGrow();
+  const tmp = { id: `tmp-${Date.now()}`, task_id: taskId, user_id: S.user.id, body, created_at: new Date().toISOString(), pending: true };
+  chat.messages.push(tmp); renderChat({ stick: true });
+  const { data, error } = await sb.from('task_messages')
+    .insert({ task_id: taskId, project_id: S.activeId, body })
+    .select('id,task_id,user_id,body,created_at').single();
+  const i = chat.messages.indexOf(tmp);
+  if (error) {
+    if (i >= 0) chat.messages.splice(i, 1);
+    if (chat.taskId === taskId) { chatInput.value = body; autoGrow(); renderChat(); }
+    return fail(error, 'Xabar yuborilmadi');
+  }
+  if (chat.taskId !== taskId) return;
+  // Realtime hodisasi avval kelgan bo'lsa, dublikat qoldirmaymiz
+  if (chat.messages.some(x => x.id === data.id)) { if (i >= 0) chat.messages.splice(i, 1); }
+  else if (i >= 0) chat.messages[i] = data;
+  renderChat();
+}
+
+function autoGrow() {
+  chatInput.style.height = 'auto';
+  chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + 'px';
+}
+
+$('#chatForm').addEventListener('submit', e => { e.preventDefault(); sendMessage(); });
+chatInput.addEventListener('input', autoGrow);
+chatInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendMessage(); }
+});
+chatList.addEventListener('click', async e => {
+  const btn = e.target.closest('[data-del-msg]'); if (!btn) return;
+  if (!confirm("Xabar o'chirilsinmi?")) return;
+  const id = btn.dataset.delMsg;
+  const { error } = await sb.from('task_messages').delete().eq('id', id);
+  if (error) return fail(error, "O'chirilmadi");
+  onMessageDelete(id);
+});
 
 // ---------- name dialog ----------
 const ndlg = $('#nameDlg');

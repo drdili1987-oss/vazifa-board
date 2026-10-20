@@ -67,6 +67,7 @@
 
 <!-- Task dialog -->
 <dialog id="taskDlg">
+ <div class="task-wrap" id="taskWrap">
   <form class="dlg" id="taskForm" method="dialog">
     <div class="field"><label for="fTitle">Nomi</label><input id="fTitle" class="title-input" required maxlength="200"></div>
     <div class="field"><label for="fDesc">Tavsif</label><textarea id="fDesc" maxlength="4000" placeholder="Batafsil ma'lumot…"></textarea></div>
@@ -85,6 +86,16 @@
       <button type="submit" class="btn primary">Saqlash</button>
     </div>
   </form>
+  <aside class="chat" id="chat" hidden aria-label="Vazifa chati">
+    <div class="chat-head"><h3>Chat</h3><span class="chat-count" id="chatCount"></span></div>
+    <div class="chat-list" id="chatList" aria-live="polite"></div>
+    <form class="chat-form" id="chatForm">
+      <textarea id="chatInput" rows="1" maxlength="2000" placeholder="Xabar yozing…" aria-label="Xabar"></textarea>
+      <button class="btn primary" type="submit" id="chatSend" aria-label="Yuborish">↑</button>
+    </form>
+    <div class="hint chat-hint">Enter — yuborish, Shift+Enter — yangi qator</div>
+  </aside>
+ </div>
 </dialog>
 
 <!-- Name dialog -->
