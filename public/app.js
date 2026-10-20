@@ -52,6 +52,9 @@ let userChannel = null;
 
 const activeProject = () => S.projects.find(p => p.id === S.activeId) || null;
 const myRole = () => S.members.find(m => m.user_id === S.user?.id)?.role || null;
+const isOwner = () => myRole() === 'owner';
+// Vazifani faqat uni yaratgan odam o'chiradi; yaratuvchisi yo'q (hisobi o'chgan) bo'lsa — loyiha egasi
+const canDeleteTask = t => !!t && (t.created_by === S.user?.id || (!t.created_by && isOwner()));
 const profileOf = id => S.members.find(m => m.user_id === id)?.profile || null;
 const colTasks = colId => S.tasks.filter(t => t.column_id === colId).sort((a, b) => a.position - b.position);
 const displayName = p => p?.full_name || p?.email?.split('@')[0] || 'Foydalanuvchi';
@@ -237,6 +240,10 @@ function subscribeProject(id) {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: f }, scheduleReload)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'columns', filter: f }, scheduleReload)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'project_members', filter: f }, onMembersChange)
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'projects', filter: `id=eq.${id}` }, p => {
+      const x = S.projects.find(q => q.id === p.new?.id); if (!x) return;
+      Object.assign(x, { name: p.new.name, color: p.new.color }); render();
+    })
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'task_messages', filter: f }, p => onMessageInsert(p.new))
     // DELETE hodisalarida Realtime filter ishlamaydi va faqat id keladi: o'zimiz tekshiramiz
     .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'task_messages' }, p => onMessageDelete(p.old?.id))
@@ -332,20 +339,22 @@ function render() {
     (late ? `<span class="bad">${late} muddati o'tgan</span>` : '');
 
   const filtering = !!(filter.q || filter.who);
+  const owner = isOwner();
+  $('#mEditProj').hidden = !owner;
   $('#board').innerHTML = S.columns.map(c => {
     const all = colTasks(c.id), vis = all.filter(matches);
     return `<section class="col" data-col="${c.id}">
       <div class="col-head">
-        <input class="col-title" value="${esc(c.title)}" maxlength="40" aria-label="Ustun nomi" id="ct-${c.id}">
+        <input class="col-title" value="${esc(c.title)}" maxlength="40" aria-label="Ustun nomi" id="ct-${c.id}"${owner ? '' : ' readonly tabindex="-1" title="Ustunlarni faqat loyiha egasi o\'zgartiradi"'}>
         <span class="count">${filtering ? `${vis.length}/${all.length}` : all.length}</span>
-        <button class="icon-btn" data-act="del-col" aria-label="Ustunni o'chirish" title="Ustunni o'chirish">×</button>
+        ${owner ? `<button class="icon-btn" data-act="del-col" aria-label="Ustunni o'chirish" title="Ustunni o'chirish">×</button>` : ''}
       </div>
       <div class="list" data-col="${c.id}">
         ${vis.length ? vis.map(t => cardHTML(t, c.is_done)).join('') : `<div class="empty">${all.length ? 'Filtrga mos vazifa yo\'q' : 'Bu yerga vazifa torting'}</div>`}
       </div>
       <div class="col-foot"><button class="add-task" data-act="quick">+ Vazifa qo'shish</button></div>
     </section>`;
-  }).join('') + `<button class="add-col" id="addCol">+ Ustun qo'shish</button>`;
+  }).join('') + (owner ? `<button class="add-col" id="addCol">+ Ustun qo'shish</button>` : '');
 
   const whoSel = $('#who');
   whoSel.innerHTML = `<option value="">Hamma</option>` +
@@ -379,6 +388,7 @@ async function updateTask(id, patch) {
 
 async function deleteTask(id) {
   const i = S.tasks.findIndex(t => t.id === id); if (i < 0) return;
+  if (!canDeleteTask(S.tasks[i])) return toast("Vazifani faqat uni yaratgan odam o'chira oladi");
   const [removed] = S.tasks.splice(i, 1); render();
   const { error } = await sb.from('tasks').delete().eq('id', id);
   if (error) { S.tasks.push(removed); render(); fail(error, 'O\'chirilmadi'); }
@@ -428,6 +438,7 @@ async function addColumn(title) {
 }
 
 async function renameColumn(id, title) {
+  if (!isOwner()) return;
   const c = S.columns.find(x => x.id === id); if (!c || c.title === title) return;
   const old = c.title; c.title = title;
   const { error } = await sb.from('columns').update({ title }).eq('id', id);
@@ -435,6 +446,7 @@ async function renameColumn(id, title) {
 }
 
 async function deleteColumn(id) {
+  if (!isOwner()) return;
   if (colTasks(id).length) return toast('Avval ustundagi vazifalarni ko\'chiring');
   const i = S.columns.findIndex(c => c.id === id);
   const [removed] = S.columns.splice(i, 1); render();
@@ -500,7 +512,7 @@ function openTask(id) {
   $('#fDue').value = t.due_date || '';
   $('#fPrio').value = t.priority || '';
   $('#fTags').value = t.tags.join(', ');
-  $('#delTask').hidden = false;
+  $('#delTask').hidden = !canDeleteTask(t);
   resetDelete();
   dlg.showModal();
   openChat(id);
@@ -817,16 +829,27 @@ const ndlg = $('#nameDlg');
 let nameMode = '';
 function askName(mode) {
   nameMode = mode;
-  $('#nameTitle').textContent = mode === 'project' ? 'Yangi loyiha' : 'Yangi ustun';
-  $('#fName').maxLength = mode === 'project' ? 60 : 40;
-  $('#fName').value = '';
-  ndlg.showModal(); $('#fName').focus();
+  $('#nameTitle').textContent = { project: 'Yangi loyiha', column: 'Yangi ustun', rename: 'Loyiha nomi' }[mode];
+  $('#nameSubmit').textContent = mode === 'rename' ? 'Saqlash' : 'Yaratish';
+  $('#fName').maxLength = mode === 'column' ? 40 : 60;
+  $('#fName').value = mode === 'rename' ? (activeProject()?.name || '') : '';
+  ndlg.showModal(); $('#fName').focus(); $('#fName').select();
+}
+
+async function renameProject(name) {
+  const p = activeProject(); if (!p || !isOwner() || p.name === name) return;
+  const old = p.name; p.name = name; render();
+  const { error } = await sb.from('projects').update({ name }).eq('id', p.id);
+  if (error) { p.name = old; render(); return fail(error, 'Nom saqlanmadi'); }
+  toast('Saqlandi');
 }
 $('#nameForm').addEventListener('submit', async e => {
   e.preventDefault();
   const name = $('#fName').value.trim(); if (!name) return;
   ndlg.close();
-  if (nameMode === 'project') await createProject(name); else await addColumn(name);
+  if (nameMode === 'project') await createProject(name);
+  else if (nameMode === 'rename') await renameProject(name);
+  else await addColumn(name);
 });
 $('#cancelName').addEventListener('click', () => ndlg.close());
 
@@ -850,6 +873,10 @@ function renderMembers() {
   $('#projDanger').textContent = owner ? 'Loyihani o\'chirish' : 'Loyihadan chiqish';
 }
 
+$('#mEditProj').addEventListener('click', () => {
+  $('#menu').hidden = true;
+  if (isOwner()) askName('rename');
+});
 $('#mMembers').addEventListener('click', () => {
   $('#menu').hidden = true;
   if (!activeProject()) return toast('Avval loyiha tanlang');

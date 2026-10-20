@@ -46,6 +46,7 @@
   </header>
   <div class="menu" id="menu" role="menu" hidden>
     <div class="who" id="menuWho"></div>
+    <button role="menuitem" id="mEditProj" hidden>Loyiha nomini o'zgartirish</button>
     <button role="menuitem" id="mMembers">Loyiha a'zolari</button>
     <button role="menuitem" id="mLogout">Chiqish</button>
   </div>
@@ -112,7 +113,7 @@
   <form class="dlg" id="nameForm" method="dialog">
     <h2 id="nameTitle"></h2>
     <div class="field"><label for="fName">Nomi</label><input id="fName" required maxlength="60"></div>
-    <div class="actions"><button type="button" class="btn" id="cancelName">Bekor qilish</button><button type="submit" class="btn primary">Yaratish</button></div>
+    <div class="actions"><button type="button" class="btn" id="cancelName">Bekor qilish</button><button type="submit" class="btn primary" id="nameSubmit">Yaratish</button></div>
   </form>
 </dialog>
 
