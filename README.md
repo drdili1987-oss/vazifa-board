@@ -19,4 +19,5 @@ Barcha ruxsatlar Postgres RLS orqali: foydalanuvchi faqat a'zo bo'lgan loyihalar
 ## Vazifa chati
 - Har bir vazifa oynasida chat: xabarlar real-time keladi, kartochkada 💬 soni ko'rinadi.
 - Ruxsatlar (RLS): faqat loyiha a'zolari o'qiydi va yozadi; xabar faqat o'z nomingizdan; o'chirish — muallif yoki loyiha egasi; tahrirlash yo'q.
+- Rasm biriktirish: tugma, sudrab tashlash yoki Ctrl+V. Brauzerda ≤1600px JPEG ga kichraytiriladi. Yopiq bucket `task-files` (5 MB, faqat rasm), yo'l `project_id/task_id/uuid.ext`; ko'rish — 1 soatlik imzolangan havola. Storage RLS: faqat a'zolar o'qiydi/yuklaydi; o'chirish — yuklagan yoki loyiha egasi.
 - Xabar boshqa loyihadagi vazifaga bog'lana olmaydi: `(task_id, project_id)` → `tasks(id, project_id)` FK. Vazifa o'chsa, chati ham o'chadi.

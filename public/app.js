@@ -44,7 +44,7 @@ const S = {
   msgCounts: {}, // task_id -> xabarlar soni
 };
 // Ochiq vazifa chati
-const chat = { taskId: null, messages: [], loading: false };
+const chat = { taskId: null, messages: [], loading: false, sending: false };
 const filter = { q: '', who: '' };
 let loadSeq = 0;
 let channel = null;
@@ -574,6 +574,73 @@ function msgTime(iso) {
   return `${d.getDate()} ${MONTHS[d.getMonth()]}${y}, ${hm}`;
 }
 
+// ---- rasmlar: yopiq bucket, ko'rish uchun vaqtinchalik (1 soat) havola
+const BUCKET = 'task-files';
+const MAX_RAW = 15 * 1024 * 1024;   // tanlangan fayl
+const MAX_UP = 5 * 1024 * 1024;     // bucket limiti
+const urlCache = new Map();         // path -> { url, exp }
+
+async function signUrls(paths) {
+  const now = Date.now();
+  const need = [...new Set(paths)].filter(p => p && !(urlCache.get(p)?.exp > now + 60e3));
+  if (!need.length) return;
+  const { data, error } = await sb.storage.from(BUCKET).createSignedUrls(need, 3600);
+  if (error) return console.error(error);
+  data.forEach(d => { if (d.signedUrl) urlCache.set(d.path, { url: d.signedUrl, exp: now + 3600e3 }); });
+}
+
+function imageHTML(m) {
+  if (!m.image_path && !m.localUrl) return '';
+  const url = m.localUrl || urlCache.get(m.image_path)?.url;
+  const ratio = m.image_w && m.image_h ? `aspect-ratio:${m.image_w}/${m.image_h}` : '';
+  if (!url) return `<span class="msg-img"><span class="ph" style="${ratio}"></span></span>`;
+  return `<a class="msg-img" href="${esc(url)}" target="_blank" rel="noopener" title="Kattalashtirish">
+    <img src="${esc(url)}" alt="Biriktirilgan rasm" loading="lazy" ${m.image_w ? `width="${m.image_w}" height="${m.image_h}"` : ''}></a>`;
+}
+
+// Katta rasmni brauzerda kichraytiramiz (≤1600px, JPEG): tez yuklanadi, Storage limitini tejaydi
+async function prepareImage(file) {
+  if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type)) throw new Error('Faqat JPG, PNG, WEBP yoki GIF rasm');
+  if (file.size > MAX_RAW) throw new Error('Rasm juda katta (15 MB gacha)');
+  const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  const { width: w0, height: h0 } = bmp;
+  if (file.type === 'image/gif') {
+    bmp.close?.();
+    if (file.size > MAX_UP) throw new Error('GIF 5 MB dan oshmasin');
+    return { blob: file, ext: 'gif', type: 'image/gif', w: w0, h: h0 };
+  }
+  const k = Math.min(1, 1600 / Math.max(w0, h0));
+  const w = Math.max(1, Math.round(w0 * k)), h = Math.max(1, Math.round(h0 * k));
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h); // PNG shaffofligi qora bo'lib qolmasin
+  ctx.drawImage(bmp, 0, 0, w, h); bmp.close?.();
+  const toBlob = q => new Promise(r => cv.toBlob(r, 'image/jpeg', q));
+  let blob = await toBlob(0.85);
+  if (blob && blob.size > MAX_UP) blob = await toBlob(0.65);
+  if (!blob || blob.size > MAX_UP) throw new Error('Rasmni siqib bo\'lmadi');
+  return { blob, ext: 'jpg', type: 'image/jpeg', w, h };
+}
+
+let attach = null; // { blob, ext, type, w, h, localUrl }
+function clearAttach() {
+  if (attach?.localUrl && !attach.sent) URL.revokeObjectURL(attach.localUrl);
+  attach = null; $('#chatAttach').hidden = true; $('#chatFile').value = '';
+}
+async function setAttach(file) {
+  if (!chat.taskId) return;
+  try {
+    $('#chatAttachInfo').textContent = 'Tayyorlanmoqda…'; $('#chatAttach').hidden = false;
+    const img = await prepareImage(file);
+    clearAttach();
+    attach = { ...img, localUrl: URL.createObjectURL(img.blob) };
+    $('#chatAttachImg').src = attach.localUrl;
+    $('#chatAttachInfo').textContent = `${img.w}×${img.h} · ${(img.blob.size / 1024).toFixed(0)} KB`;
+    $('#chatAttach').hidden = false;
+    chatInput.focus();
+  } catch (err) { clearAttach(); toast(err.message || 'Rasm qo\'shilmadi'); }
+}
+
 function renderChat({ stick = false } = {}) {
   const atBottom = chatList.scrollHeight - chatList.scrollTop - chatList.clientHeight < 40;
   const n = chat.messages.filter(m => !m.pending).length;
@@ -593,7 +660,8 @@ function renderChat({ stick = false } = {}) {
       <div class="msg-body">
         <div class="msg-top"><b>${esc(p ? displayName(p) : "Sobiq a'zo")}</b><time datetime="${esc(m.created_at)}">${m.pending ? 'yuborilmoqda…' : msgTime(m.created_at)}</time>
           ${canDel ? `<button type="button" class="icon-btn" data-del-msg="${m.id}" aria-label="Xabarni o'chirish" title="O'chirish">×</button>` : ''}</div>
-        <div class="msg-text">${esc(m.body)}</div>
+        ${m.body ? `<div class="msg-text">${esc(m.body)}</div>` : ''}
+        ${imageHTML(m)}
       </div>
     </div>`;
   }).join('');
@@ -606,7 +674,7 @@ async function openChat(taskId) {
   chatInput.value = ''; autoGrow();
   renderChat();
   const { data, error } = await sb.from('task_messages')
-    .select('id,task_id,user_id,body,created_at').eq('task_id', taskId)
+    .select('id,task_id,user_id,body,created_at,image_path,image_w,image_h').eq('task_id', taskId)
     .order('created_at', { ascending: false }).limit(200);
   if (chat.taskId !== taskId) return; // boshqa vazifa ochildi
   chat.loading = false;
@@ -614,10 +682,14 @@ async function openChat(taskId) {
   // Realtime orqali yuklash paytida kelganlarni saqlab qolamiz
   const extra = chat.messages.filter(m => !data.some(d => d.id === m.id));
   chat.messages = [...data.reverse(), ...extra];
+  await signUrls(chat.messages.map(m => m.image_path));
+  if (chat.taskId !== taskId) return;
   renderChat({ stick: true });
 }
 
 function closeChat() {
+  clearAttach();
+  chat.messages.forEach(m => m.localUrl && URL.revokeObjectURL(m.localUrl));
   chat.taskId = null; chat.messages = []; chat.loading = false;
   $('#chat').hidden = true; dlg.classList.remove('with-chat');
 }
@@ -628,9 +700,10 @@ function onMessageInsert(m) {
   countedMsgs.add(m.id);
   if (chat.taskId === m.task_id && !chat.messages.some(x => x.id === m.id)) {
     // o'zimiz yuborgan, hali "pending" turgan nusxani almashtiramiz
-    const p = chat.messages.findIndex(x => x.pending && x.user_id === m.user_id && x.body === m.body);
-    if (p >= 0) chat.messages[p] = m; else chat.messages.push(m);
+    const p = chat.messages.findIndex(x => x.pending && x.user_id === m.user_id && x.body === m.body && !!x.localUrl === !!m.image_path);
+    if (p >= 0) { m.localUrl = chat.messages[p].localUrl; chat.messages[p] = m; } else chat.messages.push(m);
     renderChat();
+    if (m.image_path && !m.localUrl) signUrls([m.image_path]).then(() => chat.taskId === m.task_id && renderChat());
   }
   S.msgCounts[m.task_id] = (S.msgCounts[m.task_id] || 0) + 1;
   patchCardCount(m.task_id);
@@ -658,21 +731,44 @@ function refreshCounts() {
 
 async function sendMessage() {
   const body = chatInput.value.trim();
-  const taskId = chat.taskId;
-  if (!body || !taskId) return;
+  const taskId = chat.taskId, projectId = S.activeId;
+  const img = attach;
+  if ((!body && !img) || !taskId || chat.sending) return;
+  chat.sending = true;
   chatInput.value = ''; autoGrow();
-  const tmp = { id: `tmp-${Date.now()}`, task_id: taskId, user_id: S.user.id, body, created_at: new Date().toISOString(), pending: true };
+  if (img) { img.sent = true; attach = null; $('#chatAttach').hidden = true; $('#chatFile').value = ''; }
+  const tmp = { id: `tmp-${Date.now()}`, task_id: taskId, user_id: S.user.id, body, created_at: new Date().toISOString(),
+                pending: true, localUrl: img?.localUrl, image_w: img?.w, image_h: img?.h };
   chat.messages.push(tmp); renderChat({ stick: true });
-  const { data, error } = await sb.from('task_messages')
-    .insert({ task_id: taskId, project_id: S.activeId, body })
-    .select('id,task_id,user_id,body,created_at').single();
-  const i = chat.messages.indexOf(tmp);
-  if (error) {
-    if (i >= 0) chat.messages.splice(i, 1);
-    if (chat.taskId === taskId) { chatInput.value = body; autoGrow(); renderChat(); }
-    return fail(error, 'Xabar yuborilmadi');
+
+  const undo = (err, msg) => {
+    const i = chat.messages.indexOf(tmp); if (i >= 0) chat.messages.splice(i, 1);
+    if (chat.taskId === taskId) {
+      chatInput.value = body; autoGrow();
+      if (img) { img.sent = false; attach = img; $('#chatAttachImg').src = img.localUrl; $('#chatAttach').hidden = false; }
+      renderChat();
+    }
+    chat.sending = false;
+    fail(err, msg);
+  };
+
+  let path = null;
+  if (img) {
+    path = `${projectId}/${taskId}/${crypto.randomUUID()}.${img.ext}`;
+    const up = await sb.storage.from(BUCKET).upload(path, img.blob, { contentType: img.type, upsert: false });
+    if (up.error) return undo(up.error, 'Rasm yuklanmadi');
   }
+  const row = { task_id: taskId, project_id: projectId, body };
+  if (path) Object.assign(row, { image_path: path, image_w: img.w, image_h: img.h });
+  const { data, error } = await sb.from('task_messages').insert(row).select('id,task_id,user_id,body,created_at,image_path,image_w,image_h').single();
+  if (error) {
+    if (path) sb.storage.from(BUCKET).remove([path]); // yetim fayl qolmasin
+    return undo(error, 'Xabar yuborilmadi');
+  }
+  chat.sending = false;
   if (chat.taskId !== taskId) return;
+  data.localUrl = img?.localUrl;
+  const i = chat.messages.indexOf(tmp);
   // Realtime hodisasi avval kelgan bo'lsa, dublikat qoldirmaymiz
   if (chat.messages.some(x => x.id === data.id)) { if (i >= 0) chat.messages.splice(i, 1); }
   else if (i >= 0) chat.messages[i] = data;
@@ -689,12 +785,30 @@ chatInput.addEventListener('input', autoGrow);
 chatInput.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendMessage(); }
 });
+$('#chatPick').addEventListener('click', () => $('#chatFile').click());
+$('#chatFile').addEventListener('change', e => { const f = e.target.files?.[0]; if (f) setAttach(f); });
+$('#chatAttachDel').addEventListener('click', () => { clearAttach(); chatInput.focus(); });
+chatInput.addEventListener('paste', e => {
+  const f = [...(e.clipboardData?.files || [])].find(x => x.type.startsWith('image/'));
+  if (f) { e.preventDefault(); setAttach(f); }
+});
+const chatBox = $('#chat');
+chatBox.addEventListener('dragover', e => { if ([...e.dataTransfer.types].includes('Files')) { e.preventDefault(); chatBox.classList.add('drop'); } });
+chatBox.addEventListener('dragleave', e => { if (!chatBox.contains(e.relatedTarget)) chatBox.classList.remove('drop'); });
+chatBox.addEventListener('drop', e => {
+  chatBox.classList.remove('drop');
+  const f = [...(e.dataTransfer?.files || [])].find(x => x.type.startsWith('image/'));
+  if (f) { e.preventDefault(); setAttach(f); }
+});
+
 chatList.addEventListener('click', async e => {
   const btn = e.target.closest('[data-del-msg]'); if (!btn) return;
   if (!confirm("Xabar o'chirilsinmi?")) return;
   const id = btn.dataset.delMsg;
+  const path = chat.messages.find(m => m.id === id)?.image_path;
   const { error } = await sb.from('task_messages').delete().eq('id', id);
   if (error) return fail(error, "O'chirilmadi");
+  if (path) { const r = await sb.storage.from(BUCKET).remove([path]); if (r.error) console.error(r.error); }
   onMessageDelete(id);
 });
 

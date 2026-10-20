@@ -211,3 +211,14 @@ dialog::backdrop{background:rgba(10,15,12,.45)}
   .chat-list{max-height:50dvh}
   .msg-top .icon-btn{opacity:1}
 }
+
+/* Chat images */
+.attach-btn{width:38px;height:38px;padding:0;border-radius:10px;display:grid;place-items:center;flex:none;color:var(--muted)}
+.attach-btn:hover{color:var(--accent);border-color:var(--accent)}
+.chat-attach{display:flex;align-items:center;gap:10px;margin:0 12px;padding:8px;border:1px solid var(--line);border-bottom:0;border-radius:10px 10px 0 0;background:var(--surface)}
+.chat-attach img{width:48px;height:48px;object-fit:cover;border-radius:6px;flex:none}
+.chat-attach-info{flex:1;min-width:0;font-size:12px;color:var(--muted)}
+.msg-img{display:block;margin-top:6px;border-radius:8px;overflow:hidden;background:var(--col);max-width:240px;line-height:0}
+.msg-img img{display:block;width:100%;height:auto;max-height:320px;object-fit:cover}
+.msg-img .ph{display:block;width:240px;max-width:100%;aspect-ratio:4/3}
+.chat.drop{outline:2px dashed var(--accent);outline-offset:-6px}
