@@ -252,3 +252,5 @@ dialog::backdrop{background:rgba(10,15,12,.45)}
 .avs .av:last-child{margin-left:0}
 .avs .more{width:24px;height:24px;border-radius:50%;background:var(--col);color:var(--muted);font-size:10px;font-weight:600;display:grid;place-items:center;margin-left:-7px;box-shadow:0 0 0 2px var(--surface)}
 .title-input[readonly]{background:transparent!important;border-color:transparent!important;padding-left:0!important;cursor:default}
+/* "Topshiriq AI" logotipi kengroq: tor ekranda filtr ixchamroq */
+@media (max-width:400px){ #who{max-width:100px} }

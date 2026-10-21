@@ -1,4 +1,4 @@
-# Vazifa Board
+# Topshiriq AI (avvalgi nomi: Vazifa Board)
 
 Asana uslubidagi Kanban board: Google login, jamoaviy loyihalar, real-time yangilanish.
 
