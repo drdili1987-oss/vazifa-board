@@ -317,8 +317,9 @@ function cardHTML(t, done) {
   </article>`;
 }
 
-function avatarsHTML(taskId) {
-  const ids = whoOf(taskId).filter(id => profileOf(id));
+function avatarsHTML(taskId) { return avatarStack(whoOf(taskId)); }
+function avatarStack(all) {
+  const ids = all.filter(id => profileOf(id));
   if (!ids.length) return `<span class="avs">${avatarHTML(null)}</span>`;
   const shown = ids.slice(0, 3), extra = ids.length - shown.length;
   // row-reverse: birinchisi eng o'ngda emas, chapda ko'rinsin
@@ -515,20 +516,47 @@ const dlg = $('#taskDlg');
 let editing = null;
 
 let picked = new Set();
-function renderWhoPick() {
-  $('#fWho').innerHTML = S.members.map(m => `<button type="button" class="who-opt" data-uid="${m.user_id}" aria-pressed="${picked.has(m.user_id)}">
-    ${avatarHTML(m.profile)}${esc(displayName(m.profile))}${m.user_id === S.user.id ? ' (siz)' : ''}</button>`).join('');
+// Mas'ullar: select ko'rinishidagi tugma + bosilganda ochiladigan ro'yxat (bir nechta tanlash)
+function renderWhoValue() {
+  const ids = S.members.map(m => m.user_id).filter(id => picked.has(id)); // a'zolar tartibida
+  $('#fWhoVal').innerHTML = ids.length
+    ? `${avatarStack(ids)}<span class="who-names">${esc(ids.map(id => displayName(profileOf(id))).join(', '))}</span>`
+    : `<span class="who-none">Tanlanmagan</span>`;
 }
+function renderWhoPick() {
+  $('#fWho').innerHTML = S.members.map(m => `<button type="button" class="who-opt" role="option" data-uid="${m.user_id}" aria-selected="${picked.has(m.user_id)}">
+    <span class="chk" aria-hidden="true"></span>${avatarHTML(m.profile)}<span class="nm">${esc(displayName(m.profile))}${m.user_id === S.user.id ? ' (siz)' : ''}</span></button>`).join('');
+  renderWhoValue();
+}
+function toggleWhoList(open) {
+  const list = $('#fWho'), btn = $('#fWhoBtn');
+  open ??= list.hidden;
+  list.hidden = !open; btn.setAttribute('aria-expanded', open);
+  if (open) (list.querySelector('[aria-selected="true"]') || list.querySelector('.who-opt'))?.focus();
+}
+$('#fWhoBtn').addEventListener('click', () => toggleWhoList());
 $('#fWho').addEventListener('click', e => {
   const b = e.target.closest('[data-uid]'); if (!b) return;
   const id = b.dataset.uid; picked.has(id) ? picked.delete(id) : picked.add(id);
-  b.setAttribute('aria-pressed', picked.has(id));
+  b.setAttribute('aria-selected', picked.has(id));
+  renderWhoValue();
+});
+$('#fWho').addEventListener('keydown', e => {
+  const opts = [...$('#fWho').querySelectorAll('.who-opt')], i = opts.indexOf(document.activeElement);
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); opts.at((i + (e.key === 'ArrowDown' ? 1 : -1)) % opts.length)?.focus(); }
+  else if (e.key === 'Escape' || e.key === 'Tab') {
+    if (e.key === 'Escape') e.preventDefault(); // dialog yopilib ketmasin
+    toggleWhoList(false); if (e.key === 'Escape') $('#fWhoBtn').focus();
+  }
+});
+document.addEventListener('pointerdown', e => {
+  if (!$('#fWho').hidden && !e.target.closest('.who-field')) toggleWhoList(false);
 });
 function fillSelects(colId, who = []) {
   $('#fCol').innerHTML = S.columns.map(c => `<option value="${c.id}">${esc(c.title)}</option>`).join('');
   $('#fCol').value = colId;
   picked = new Set(who.filter(id => S.members.some(m => m.user_id === id)));
-  renderWhoPick();
+  renderWhoPick(); toggleWhoList(false);
 }
 function setTitleLock(locked) {
   $('#fTitle').readOnly = locked; $('#fTitleHint').hidden = !locked;
@@ -610,6 +638,8 @@ $('#delTask').addEventListener('click', () => {
 $('#cancelTask').addEventListener('click', () => dlg.close());
 dlg.addEventListener('close', () => { resetDelete(); closeChat(); flushPendingReload(); });
 dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+// Esc: avval mas'ullar ro'yxati yopilsin, dialog emas
+dlg.addEventListener('cancel', e => { if (!$('#fWho').hidden) { e.preventDefault(); toggleWhoList(false); $('#fWhoBtn').focus(); } });
 
 // ---------- task chat ----------
 const chatList = $('#chatList');

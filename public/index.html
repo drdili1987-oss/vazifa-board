@@ -77,8 +77,10 @@
       <div class="field"><label for="fDue">Muddat</label><input id="fDue" type="date"></div>
       <div class="field"><label for="fPrio">Muhimlik</label>
         <select id="fPrio"><option value="">Yo'q</option><option value="high">Yuqori</option><option value="mid">O'rta</option><option value="low">Past</option></select></div>
+      <div class="field who-field"><label id="fWhoLbl">Mas'ullar</label>
+        <button type="button" class="who-btn" id="fWhoBtn" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="fWhoLbl fWhoVal"><span class="who-val" id="fWhoVal"></span></button>
+        <div class="who-list" id="fWho" role="listbox" aria-multiselectable="true" aria-labelledby="fWhoLbl" hidden></div></div>
     </div>
-    <div class="field"><label id="fWhoLbl">Mas'ullar</label><div class="who-pick" id="fWho" role="group" aria-labelledby="fWhoLbl"></div></div>
     <div class="field"><label for="fTags">Teglar (vergul bilan)</label><input id="fTags" placeholder="dizayn, frontend"></div>
     <div class="actions">
       <button type="button" class="btn danger" id="delTask">O'chirish</button>
