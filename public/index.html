@@ -6,7 +6,7 @@
 <title>Topshiriq AI</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Unbounded:wght@600&family=JetBrains+Mono:wght@500&display=swap">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=20261021c">
 <style>
   :root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);box-sizing:border-box}
   body{margin:0}
@@ -66,6 +66,11 @@
     <button role="menuitem" id="mLogout">Chiqish</button>
   </div>
 
+  <div class="perm-bar" id="permBar" hidden>
+    <span>🔔 Yangi xabar, vazifa va holat o'zgarishlari haqida kompyuter ekranida bildirishnoma olish uchun ruxsat bering</span>
+    <button type="button" class="btn primary" id="permAllow">Yoqish</button>
+    <button type="button" class="x" id="permClose" aria-label="Yopish">×</button>
+  </div>
   <div class="sub" id="sub">
     <h1 id="pname"></h1>
     <div class="stats" id="stats"></div>
@@ -157,6 +162,6 @@
 <script src="https://accounts.google.com/gsi/client" async></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="config.js"></script>
-<script src="app.js"></script>
+<script src="app.js?v=20261021c"></script>
 </body>
 </html>

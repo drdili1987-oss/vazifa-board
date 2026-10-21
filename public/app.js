@@ -175,6 +175,7 @@ async function handleSession(session) {
   show('loading');
   renderMe();
   subscribeUser();
+  renderPermBar();
   await loadProjects(store.get(ACTIVE_KEY));
   show('app');
 }
@@ -400,11 +401,22 @@ $('#notifReadAll').addEventListener('click', async () => {
   const { error } = await sb.from('notifications').update({ read_at: now }).is('read_at', null);
   if (error) { fail(error, 'Bajarilmadi'); loadNotifications(); }
 });
-$('#notifEnable').addEventListener('click', async () => {
+// Ruxsat so'rash faqat foydalanuvchi bosganda (brauzerlar avtomatik so'rovni bloklaydi)
+const PERM_KEY = 'notif-perm-dismissed';
+function renderPermBar() {
+  $('#permBar').hidden = !(S.user && canBrowserNotify() && Notification.permission === 'default' && !store.get(PERM_KEY));
+}
+async function askBrowserPermission() {
   try { await Notification.requestPermission(); } catch {}
-  renderNotifList();
-  if (Notification.permission === 'denied') toast('Brauzer sozlamalarida bu sayt uchun bildirishnomalarga ruxsat bering');
-});
+  renderPermBar(); if (!$('#notif').hidden) renderNotifList();
+  if (Notification.permission === 'granted') {
+    toast('Bildirishnomalar yoqildi');
+    try { new Notification('Topshiriq AI', { body: 'Bildirishnomalar ishlayapti ✅', tag: 'perm-test' }); } catch {}
+  } else if (Notification.permission === 'denied') toast("Brauzer bloklagan: manzil satridagi 🔒 belgisi → Bildirishnomalar → Ruxsat berish");
+}
+$('#notifEnable').addEventListener('click', askBrowserPermission);
+$('#permAllow').addEventListener('click', askBrowserPermission);
+$('#permClose').addEventListener('click', () => { store.set(PERM_KEY, '1'); renderPermBar(); });
 document.addEventListener('click', e => { if (!$('#notif').hidden && !e.target.closest('#notif, #bellBtn')) toggleNotif(false); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#notif').hidden) { toggleNotif(false); $('#bellBtn').focus(); } });
 // "5 daq oldin" yangilanib tursin
