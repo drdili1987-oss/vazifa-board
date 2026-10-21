@@ -26,3 +26,13 @@ Barcha ruxsatlar Postgres RLS orqali: foydalanuvchi faqat a'zo bo'lgan loyihalar
 - Bosqichlar: Rejada → **Qabul qilindi** → Jarayonda → Tekshiruvda → Bajarildi (yangi loyihalarda standart; mavjudlariga qo'shildi).
 - Vazifaga bir nechta a'zo biriktiriladi (`task_assignees`); faqat loyiha a'zosi, a'zo chiqarilsa biriktirish o'zi o'chadi.
 - Vazifa nomini faqat uni yaratgan odam o'zgartiradi (DB trigger `tasks_guard_title` + UI'da qulf).
+
+## Bildirishnomalar
+- Jadval `notifications`; yozuvlarni faqat DB triggerlari yaratadi (`private.notify_*`, security definer), foydalanuvchi faqat o'zinikini o'qiydi va `read_at` ni o'zgartiradi
+- Kimga boradi (amalni bajargan odamning o'ziga bormaydi):
+  - chat xabari, bosqich o'zgarishi → vazifa yaratuvchisi + mas'ullar
+  - yangi vazifa → loyihaning barcha a'zolari
+  - mas'ul qilib biriktirildi → o'sha odam
+  - loyihaga qo'shildi → o'sha odam
+- UI: 🔔 belgisi va o'qilmaganlar soni, tab sarlavhasida `(N)`; sayt ochiq, lekin boshqa oyna faol bo'lsa — brauzer bildirishnomasi (ruxsat panel ichidagi tugma orqali so'raladi)
+- Cheklov: sayt tabi butunlay yopiq bo'lsa xabar chiqmaydi (buning uchun Web Push yoki Telegram kerak)

@@ -41,9 +41,24 @@
       <input id="q" class="search" type="search" placeholder="Qidirish…" aria-label="Vazifalarni qidirish">
       <select id="who" class="sel" aria-label="Mas'ul bo'yicha filtr"></select>
       <button id="newTask" class="btn primary">+ Vazifa</button>
+      <button class="bell" id="bellBtn" type="button" aria-label="Bildirishnomalar" aria-haspopup="dialog" aria-expanded="false">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+        <span class="badge" id="bellBadge" hidden></span>
+      </button>
       <button class="me" id="meBtn" aria-label="Hisob" aria-haspopup="menu"></button>
     </div>
   </header>
+  <section class="notif" id="notif" role="dialog" aria-label="Bildirishnomalar" hidden>
+    <div class="notif-head">
+      <b>Bildirishnomalar</b>
+      <button type="button" class="linkbtn" id="notifReadAll">Hammasini o'qilgan qilish</button>
+    </div>
+    <div class="notif-perm" id="notifPerm" hidden>
+      <span>Boshqa oyna yoki dasturda ishlayotganingizda ham xabar chiqishi uchun (sayt tabi ochiq tursin)</span>
+      <button type="button" class="btn primary" id="notifEnable">Brauzer xabarlarini yoqish</button>
+    </div>
+    <div class="notif-list" id="notifList"></div>
+  </section>
   <div class="menu" id="menu" role="menu" hidden>
     <div class="who" id="menuWho"></div>
     <button role="menuitem" id="mEditProj" hidden>Loyiha nomini o'zgartirish</button>

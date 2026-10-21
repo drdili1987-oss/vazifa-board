@@ -269,16 +269,146 @@ async function onMembersChange(payload) {
 }
 function subscribeUser() {
   if (userChannel) sb.removeChannel(userChannel);
+  const mine = `user_id=eq.${S.user.id}`;
   userChannel = sb.channel(`user-${S.user.id}`)
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'project_members', filter: `user_id=eq.${S.user.id}` },
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'project_members', filter: mine },
         () => loadProjects())
-    .subscribe();
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: mine }, p => onNotif(p.new))
+    // Boshqa qurilmada o'qilgan qilinsa, bu yerda ham hisob yangilansin
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications', filter: mine }, p => onNotifUpdate(p.new))
+    .subscribe(status => { if (status === 'SUBSCRIBED') loadNotifications(); }); // qayta ulanganda o'tkazib yuborilganlarini olish
 }
 function teardownProjectChannel() { if (channel) { sb.removeChannel(channel); channel = null; } }
 function teardownRealtime() {
   teardownProjectChannel();
   if (userChannel) { sb.removeChannel(userChannel); userChannel = null; }
+  N.items = []; N.unread = 0; toggleNotif(false); renderBell();
 }
+
+// ---------- notifications ----------
+const N = { items: [], unread: 0, seq: 0 };
+const NOTIF_LIMIT = 50;
+const canBrowserNotify = () => 'Notification' in window && window.isSecureContext;
+
+async function loadNotifications() {
+  if (!S.user) return;
+  const seq = ++N.seq;
+  const [l, c] = await Promise.all([
+    sb.from('notifications').select('*').order('created_at', { ascending: false }).limit(NOTIF_LIMIT),
+    sb.from('notifications').select('id', { count: 'exact', head: true }).is('read_at', null),
+  ]);
+  if (seq !== N.seq) return;
+  if (l.error) return console.error(l.error);
+  N.items = l.data; N.unread = c.error ? l.data.filter(n => !n.read_at).length : c.count;
+  renderBell(); if (!$('#notif').hidden) renderNotifList();
+}
+
+function notifText(n) {
+  const p = n.payload || {}, who = p.actor || 'Kimdir', task = `«${p.task || 'vazifa'}»`;
+  switch (n.kind) {
+    case 'chat': return { title: `${who} · ${p.task || 'vazifa'}`, body: `💬 ${p.text || ''}` };
+    case 'task_created': return { title: 'Yangi vazifa', body: `${who} ${task} vazifasini qo'shdi${p.to ? ` (${p.to})` : ''}` };
+    case 'stage_changed': return { title: 'Holat o\'zgardi', body: `${who}: ${task} — ${p.from || '?'} → ${p.to || '?'}` };
+    case 'assigned': return { title: 'Sizga vazifa biriktirildi', body: `${who} sizni ${task} vazifasiga mas'ul qildi` };
+    case 'added_to_project': return { title: 'Yangi loyiha', body: `${who} sizni «${p.project || 'loyiha'}» loyihasiga qo'shdi` };
+    default: return { title: 'Bildirishnoma', body: '' };
+  }
+}
+const NOTIF_ICON = { chat: '💬', task_created: '＋', stage_changed: '⇄', assigned: '👤', added_to_project: '📁' };
+
+function relTime(iso) {
+  const s = Math.max(0, (Date.now() - new Date(iso)) / 1000);
+  if (s < 60) return 'hozir';
+  if (s < 3600) return `${Math.floor(s / 60)} daq oldin`;
+  if (s < 86400) return `${Math.floor(s / 3600)} soat oldin`;
+  const d = new Date(iso); return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+}
+
+function renderBell() {
+  const b = $('#bellBadge'), n = N.unread;
+  b.hidden = !n; b.textContent = n > 99 ? '99+' : n;
+  $('#bellBtn').setAttribute('aria-label', n ? `Bildirishnomalar: ${n} ta o'qilmagan` : 'Bildirishnomalar');
+  document.title = n ? `(${n}) Topshiriq AI` : 'Topshiriq AI';
+}
+function renderNotifList() {
+  $('#notifPerm').hidden = !(canBrowserNotify() && Notification.permission === 'default');
+  $('#notifReadAll').disabled = !N.unread;
+  $('#notifList').innerHTML = N.items.length ? N.items.map(n => {
+    const { title, body } = notifText(n), p = n.payload || {};
+    const proj = n.project_id !== S.activeId && p.project && n.kind !== 'added_to_project' ? ` · ${esc(p.project)}` : '';
+    return `<button type="button" class="notif-item${n.read_at ? '' : ' unread'}" data-nid="${n.id}">
+      <span class="ni-ic" aria-hidden="true">${NOTIF_ICON[n.kind] || '•'}</span>
+      <span class="ni-tx"><b>${esc(title)}</b><span class="ni-body">${esc(body)}</span><small>${relTime(n.created_at)}${proj}</small></span>
+    </button>`;
+  }).join('') : `<div class="notif-empty">Hozircha bildirishnoma yo'q</div>`;
+}
+function toggleNotif(open) {
+  const el = $('#notif'); open ??= el.hidden;
+  el.hidden = !open; $('#bellBtn').setAttribute('aria-expanded', open);
+  if (open) { $('#menu').hidden = true; renderNotifList(); }
+}
+
+function onNotif(n) {
+  if (!n || N.items.some(x => x.id === n.id)) return;
+  // Shu vazifa chati ochiq va ko'rinib turgan bo'lsa — darhol o'qilgan
+  if (n.kind === 'chat' && chat.taskId === n.task_id && $('#taskDlg').open && !document.hidden) {
+    n.read_at = new Date().toISOString(); markRead([n.id]);
+  } else N.unread++;
+  N.items.unshift(n); N.items.length = Math.min(N.items.length, NOTIF_LIMIT);
+  renderBell(); if (!$('#notif').hidden) renderNotifList();
+  if (n.read_at) return;
+  const { title, body } = notifText(n);
+  if (document.hidden || !document.hasFocus()) browserNotify(n, title, body);
+  else toast(`${title}: ${body}`);
+}
+function onNotifUpdate(n) {
+  const x = N.items.find(i => i.id === n?.id);
+  if (x && !x.read_at && n.read_at) { x.read_at = n.read_at; N.unread = Math.max(0, N.unread - 1); renderBell(); if (!$('#notif').hidden) renderNotifList(); }
+}
+function browserNotify(n, title, body) {
+  if (!canBrowserNotify() || Notification.permission !== 'granted') return;
+  try {
+    const bn = new Notification(title, { body, tag: n.id, lang: 'uz' });
+    bn.onclick = () => { window.focus(); bn.close(); openNotif(n.id); };
+  } catch (e) { console.warn(e); } // ba'zi mobil brauzerlarda konstruktor yo'q
+}
+
+async function markRead(ids) {
+  if (!ids.length) return;
+  const { error } = await sb.from('notifications').update({ read_at: new Date().toISOString() }).in('id', ids).is('read_at', null);
+  if (error) console.error(error);
+}
+async function openNotif(id) {
+  const n = N.items.find(x => x.id === id); if (!n) return;
+  toggleNotif(false);
+  if (!n.read_at) { n.read_at = new Date().toISOString(); N.unread = Math.max(0, N.unread - 1); renderBell(); markRead([id]); }
+  if (!S.projects.some(p => p.id === n.project_id)) await loadProjects(S.activeId);
+  if (!S.projects.some(p => p.id === n.project_id)) return toast('Bu loyihaga endi kirish huquqingiz yo\'q');
+  if ($('#taskDlg').open) $('#taskDlg').close();
+  if (n.project_id !== S.activeId) { filter.who = ''; await selectProject(n.project_id); }
+  if (!n.task_id) return;
+  if (S.tasks.some(t => t.id === n.task_id)) openTask(n.task_id);
+  else toast('Vazifa o\'chirilgan');
+}
+
+$('#bellBtn').addEventListener('click', e => { e.stopPropagation(); toggleNotif(); });
+$('#notifList').addEventListener('click', e => { const b = e.target.closest('[data-nid]'); if (b) openNotif(b.dataset.nid); });
+$('#notifReadAll').addEventListener('click', async () => {
+  const now = new Date().toISOString();
+  N.items.forEach(n => n.read_at ||= now); N.unread = 0; renderBell(); renderNotifList();
+  // Ro'yxatdagi 50 tadan eskilari ham o'qilgan bo'lsin
+  const { error } = await sb.from('notifications').update({ read_at: now }).is('read_at', null);
+  if (error) { fail(error, 'Bajarilmadi'); loadNotifications(); }
+});
+$('#notifEnable').addEventListener('click', async () => {
+  try { await Notification.requestPermission(); } catch {}
+  renderNotifList();
+  if (Notification.permission === 'denied') toast('Brauzer sozlamalarida bu sayt uchun bildirishnomalarga ruxsat bering');
+});
+document.addEventListener('click', e => { if (!$('#notif').hidden && !e.target.closest('#notif, #bellBtn')) toggleNotif(false); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#notif').hidden) { toggleNotif(false); $('#bellBtn').focus(); } });
+// "5 daq oldin" yangilanib tursin
+setInterval(() => { if (!$('#notif').hidden) renderNotifList(); }, 60000);
 
 // ---------- rendering ----------
 const matches = t => {

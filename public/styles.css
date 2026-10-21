@@ -118,8 +118,9 @@ dialog::backdrop{background:rgba(10,15,12,.45)}
 
 @media (max-width:640px){
   /* Compact 2-row header: [logo | tabs | avatar] / [search | filter | +] */
-  .top{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;
-    grid-template-areas:"logo tabs tabs me" "q q who new";gap:8px 10px}
+  .top{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto auto;
+    grid-template-areas:"logo tabs tabs bell me" "q q who new new";gap:8px 10px}
+  #bellBtn{grid-area:bell}
   .top .logo{grid-area:logo}
   .top .tabs{grid-area:tabs}
   .tools{display:contents}
@@ -254,3 +255,26 @@ dialog::backdrop{background:rgba(10,15,12,.45)}
 .title-input[readonly]{background:transparent!important;border-color:transparent!important;padding-left:0!important;cursor:default}
 /* "Topshiriq AI" logotipi kengroq: tor ekranda filtr ixchamroq */
 @media (max-width:400px){ #who{max-width:100px} }
+
+/* Bildirishnomalar */
+.bell{border:0;background:transparent;width:36px;height:36px;border-radius:50%;display:grid;place-items:center;color:var(--muted);position:relative;cursor:pointer}
+.bell:hover,.bell[aria-expanded="true"]{background:var(--bg);color:var(--fg)}
+.bell .badge{position:absolute;top:1px;right:0;min-width:18px;height:18px;padding:0 5px;box-sizing:border-box;border-radius:9px;background:#C8412B;color:#fff;font-size:10.5px;font-weight:700;line-height:18px;text-align:center;box-shadow:0 0 0 2px var(--surface)}
+.notif{position:absolute;right:max(16px,env(safe-area-inset-right,0px));top:calc(56px + env(safe-area-inset-top,0px));width:min(380px,calc(100vw - 24px));max-height:min(560px,calc(100dvh - 80px));background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.18);z-index:45;display:flex;flex-direction:column;overflow:hidden}
+.notif-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.linkbtn{border:0;background:none;color:var(--accent);font-size:12.5px;font-weight:600;padding:2px 0;cursor:pointer}
+.linkbtn:disabled{color:var(--muted);cursor:default}
+.notif-perm{display:flex;flex-direction:column;gap:8px;padding:10px 14px;background:var(--accent-soft);font-size:12.5px}
+.notif-perm .btn{align-self:flex-start}
+.notif-list{overflow:auto;padding:4px}
+.notif-item{display:flex;gap:10px;width:100%;text-align:left;border:0;background:none;border-radius:8px;padding:9px 10px;cursor:pointer;position:relative}
+.notif-item:hover,.notif-item:focus-visible{background:var(--bg);outline:none}
+.notif-item.unread{background:color-mix(in srgb,var(--accent-soft) 55%,transparent)}
+.notif-item.unread::after{content:"";position:absolute;right:10px;top:14px;width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.ni-ic{flex:none;width:30px;height:30px;border-radius:50%;background:var(--col);display:grid;place-items:center;font-size:14px}
+.ni-tx{display:flex;flex-direction:column;gap:2px;min-width:0;padding-right:14px;font-size:13px}
+.ni-tx b{font-weight:600}
+.ni-body{color:var(--fg);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}
+.ni-tx small{color:var(--muted);font-size:11.5px}
+.notif-empty{color:var(--muted);text-align:center;padding:28px 12px;font-size:13px}
+@media (max-width:640px){ .notif{top:calc(52px + env(safe-area-inset-top,0px));right:12px} }
