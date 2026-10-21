@@ -42,6 +42,7 @@ const S = {
   columns: [],
   tasks: [],
   msgCounts: {}, // task_id -> xabarlar soni
+  assignees: {}, // task_id -> [user_id]
 };
 // Ochiq vazifa chati
 const chat = { taskId: null, messages: [], loading: false, sending: false };
@@ -53,6 +54,9 @@ let userChannel = null;
 const activeProject = () => S.projects.find(p => p.id === S.activeId) || null;
 const myRole = () => S.members.find(m => m.user_id === S.user?.id)?.role || null;
 const isOwner = () => myRole() === 'owner';
+// Vazifa nomini (va o'chirishni) faqat yaratgan odam boshqaradi; yaratuvchisi yo'q bo'lsa — loyiha egasi
+const canEditTitle = t => !t || t.created_by === S.user?.id || (!t.created_by && isOwner());
+const whoOf = id => S.assignees[id] || [];
 // Vazifani faqat uni yaratgan odam o'chiradi; yaratuvchisi yo'q (hisobi o'chgan) bo'lsa — loyiha egasi
 const canDeleteTask = t => !!t && (t.created_by === S.user?.id || (!t.created_by && isOwner()));
 const profileOf = id => S.members.find(m => m.user_id === id)?.profile || null;
@@ -207,17 +211,19 @@ async function selectProject(id) {
 async function loadBoard() {
   const id = S.activeId; if (!id) return;
   const seq = ++loadSeq;
-  const [m, c, t, n] = await Promise.all([
+  const [m, c, t, n, a] = await Promise.all([
     sb.from('project_members').select('user_id, role, profile:profiles(id,email,full_name,avatar_url)').eq('project_id', id),
     sb.from('columns').select('*').eq('project_id', id).order('position'),
     sb.from('tasks').select('*').eq('project_id', id).order('position'),
     sb.rpc('task_message_counts', { p_project: id }),
+    sb.from('task_assignees').select('task_id,user_id,created_at').eq('project_id', id).order('created_at'),
   ]);
   if (seq !== loadSeq || id !== S.activeId) return; // stale response
   const error = m.error || c.error || t.error;
   if (error) return fail(error, 'Board\'ni yuklab bo\'lmadi');
   S.members = m.data; S.columns = c.data; S.tasks = t.data;
   if (!n.error) S.msgCounts = Object.fromEntries(n.data.map(r => [r.task_id, Number(r.n)]));
+  if (!a.error) { S.assignees = {}; a.data.forEach(r => (S.assignees[r.task_id] ||= []).push(r.user_id)); }
   render();
 }
 
@@ -245,6 +251,10 @@ function subscribeProject(id) {
       Object.assign(x, { name: p.new.name, color: p.new.color }); render();
     })
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'task_messages', filter: f }, p => onMessageInsert(p.new))
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'task_assignees', filter: f }, scheduleReload)
+    // DELETE'da filter ishlamaydi: faqat o'z vazifalarimizga tegishlisini olamiz
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'task_assignees' },
+        p => { if (S.tasks.some(t => t.id === p.old?.task_id)) scheduleReload(); })
     // DELETE hodisalarida Realtime filter ishlamaydi va faqat id keladi: o'zimiz tekshiramiz
     .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'task_messages' }, p => onMessageDelete(p.old?.id))
     .subscribe(status => { $('#sync').classList.toggle('off', status !== 'SUBSCRIBED'); });
@@ -272,7 +282,7 @@ function teardownRealtime() {
 
 // ---------- rendering ----------
 const matches = t => {
-  if (filter.who && (filter.who === '_none' ? t.assignee_id : t.assignee_id !== filter.who)) return false;
+  if (filter.who && (filter.who === '_none' ? whoOf(t.id).length : !whoOf(t.id).includes(filter.who))) return false;
   if (!filter.q) return true;
   const q = filter.q.toLowerCase();
   return t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q) || t.tags.some(g => g.toLowerCase().includes(q));
@@ -302,11 +312,19 @@ function cardHTML(t, done) {
       ${dueInfo(t.due_date, done)}
       ${t.description ? `<span class="desc-flag" title="Tavsif bor">≡</span>` : ''}
       ${msgFlag(t.id)}
-      ${avatarHTML(profileOf(t.assignee_id))}
+      ${avatarsHTML(t.id)}
     </div>
   </article>`;
 }
 
+function avatarsHTML(taskId) {
+  const ids = whoOf(taskId).filter(id => profileOf(id));
+  if (!ids.length) return `<span class="avs">${avatarHTML(null)}</span>`;
+  const shown = ids.slice(0, 3), extra = ids.length - shown.length;
+  // row-reverse: birinchisi eng o'ngda emas, chapda ko'rinsin
+  return `<span class="avs" title="${esc(ids.map(id => displayName(profileOf(id))).join(', '))}">${
+    extra ? `<span class="more">+${extra}</span>` : ''}${shown.slice().reverse().map(id => avatarHTML(profileOf(id))).join('')}</span>`;
+}
 function msgFlag(taskId) {
   const n = S.msgCounts[taskId] || 0;
   return n ? `<span class="msg-flag" data-msgs="${taskId}" title="${n} ta xabar">💬 ${n}</span>` : '';
@@ -376,6 +394,7 @@ async function createTask(colId, data) {
   if (error) return fail(error, 'Vazifa qo\'shilmadi');
   if (!S.tasks.some(t => t.id === created.id)) S.tasks.push(created);
   render();
+  return created;
 }
 
 async function updateTask(id, patch) {
@@ -495,20 +514,44 @@ function openQuick(colEl) {
 const dlg = $('#taskDlg');
 let editing = null;
 
-function fillSelects(colId) {
+let picked = new Set();
+function renderWhoPick() {
+  $('#fWho').innerHTML = S.members.map(m => `<button type="button" class="who-opt" data-uid="${m.user_id}" aria-pressed="${picked.has(m.user_id)}">
+    ${avatarHTML(m.profile)}${esc(displayName(m.profile))}${m.user_id === S.user.id ? ' (siz)' : ''}</button>`).join('');
+}
+$('#fWho').addEventListener('click', e => {
+  const b = e.target.closest('[data-uid]'); if (!b) return;
+  const id = b.dataset.uid; picked.has(id) ? picked.delete(id) : picked.add(id);
+  b.setAttribute('aria-pressed', picked.has(id));
+});
+function fillSelects(colId, who = []) {
   $('#fCol').innerHTML = S.columns.map(c => `<option value="${c.id}">${esc(c.title)}</option>`).join('');
   $('#fCol').value = colId;
-  $('#fWho').innerHTML = `<option value="">Tayinlanmagan</option>` +
-    S.members.map(m => `<option value="${m.user_id}">${esc(displayName(m.profile))}</option>`).join('');
+  picked = new Set(who.filter(id => S.members.some(m => m.user_id === id)));
+  renderWhoPick();
+}
+function setTitleLock(locked) {
+  $('#fTitle').readOnly = locked; $('#fTitleHint').hidden = !locked;
+}
+// Mas'ullar ro'yxatini serverda farq bo'yicha yangilash
+async function saveAssignees(taskId, next) {
+  const prev = new Set(whoOf(taskId));
+  const add = [...next].filter(id => !prev.has(id)), del = [...prev].filter(id => !next.has(id));
+  S.assignees[taskId] = [...next]; render();
+  const ops = [];
+  if (add.length) ops.push(sb.from('task_assignees').insert(add.map(user_id => ({ task_id: taskId, project_id: S.activeId, user_id }))));
+  if (del.length) ops.push(sb.from('task_assignees').delete().eq('task_id', taskId).in('user_id', del));
+  const err = (await Promise.all(ops)).find(r => r.error)?.error;
+  if (err) { S.assignees[taskId] = [...prev]; render(); fail(err, "Mas'ullar saqlanmadi"); }
 }
 
 function openTask(id) {
   const t = S.tasks.find(x => x.id === id); if (!t) return;
   editing = { id };
-  fillSelects(t.column_id);
+  fillSelects(t.column_id, whoOf(id));
   $('#fTitle').value = t.title;
+  setTitleLock(!canEditTitle(t));
   $('#fDesc').value = t.description;
-  $('#fWho').value = t.assignee_id || '';
   $('#fDue').value = t.due_date || '';
   $('#fPrio').value = t.priority || '';
   $('#fTags').value = t.tags.join(', ');
@@ -523,7 +566,8 @@ function openNewTask() {
   editing = { newIn: S.columns[0].id };
   fillSelects(S.columns[0].id);
   ['#fTitle', '#fDesc', '#fDue', '#fTags'].forEach(s => $(s).value = '');
-  $('#fWho').value = ''; $('#fPrio').value = '';
+  setTitleLock(false);
+  $('#fPrio').value = '';
   $('#delTask').hidden = true;
   closeChat();
   dlg.showModal();
@@ -537,22 +581,23 @@ $('#taskForm').addEventListener('submit', async e => {
   const data = {
     title,
     description: $('#fDesc').value.trim(),
-    assignee_id: $('#fWho').value || null,
     due_date: $('#fDue').value || null,
     priority: $('#fPrio').value || null,
     tags: [...new Set($('#fTags').value.split(',').map(s => s.trim().slice(0, 30)).filter(Boolean))].slice(0, 6),
   };
   const colId = $('#fCol').value;
-  const ed = editing;
+  const ed = editing, who = new Set(picked);
   dlg.close();
   if (ed.id) {
     const t = S.tasks.find(x => x.id === ed.id);
+    if (t && !canEditTitle(t)) delete data.title; // nomni faqat yaratuvchi o'zgartiradi
     if (t && t.column_id !== colId) { data.column_id = colId; data.position = nextPosition(colId); }
-    await updateTask(ed.id, data);
+    await Promise.all([updateTask(ed.id, data), saveAssignees(ed.id, who)]);
     toast('Saqlandi');
   } else {
-    await createTask(colId, data);
-    toast('Vazifa qo\'shildi');
+    const created = await createTask(colId, data);
+    if (created && who.size) await saveAssignees(created.id, who);
+    if (created) toast('Vazifa qo\'shildi');
   }
 });
 
@@ -900,7 +945,7 @@ $('#memList').addEventListener('click', async e => {
   const { error } = await sb.from('project_members').delete().eq('project_id', S.activeId).eq('user_id', uid);
   if (error) return fail(error, 'Chiqarilmadi');
   // unassign their tasks locally; DB keeps assignee (they may rejoin) — clear it server-side too
-  await sb.from('tasks').update({ assignee_id: null }).eq('project_id', S.activeId).eq('assignee_id', uid);
+  // biriktirishlar FK cascade orqali o'zi o'chadi (task_assignees → project_members)
   await loadBoard(); renderMembers();
 });
 

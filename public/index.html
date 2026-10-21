@@ -70,15 +70,15 @@
 <dialog id="taskDlg">
  <div class="task-wrap" id="taskWrap">
   <form class="dlg" id="taskForm" method="dialog">
-    <div class="field"><label for="fTitle">Nomi</label><input id="fTitle" class="title-input" required maxlength="200"></div>
+    <div class="field"><label for="fTitle">Nomi</label><input id="fTitle" class="title-input" required maxlength="200"><div class="hint" id="fTitleHint" hidden>Nomni faqat vazifani yaratgan odam o'zgartira oladi</div></div>
     <div class="field"><label for="fDesc">Tavsif</label><textarea id="fDesc" maxlength="4000" placeholder="Batafsil ma'lumot…"></textarea></div>
     <div class="grid2">
       <div class="field"><label for="fCol">Holat</label><select id="fCol"></select></div>
-      <div class="field"><label for="fWho">Mas'ul</label><select id="fWho"></select></div>
       <div class="field"><label for="fDue">Muddat</label><input id="fDue" type="date"></div>
       <div class="field"><label for="fPrio">Muhimlik</label>
         <select id="fPrio"><option value="">Yo'q</option><option value="high">Yuqori</option><option value="mid">O'rta</option><option value="low">Past</option></select></div>
     </div>
+    <div class="field"><label id="fWhoLbl">Mas'ullar</label><div class="who-pick" id="fWho" role="group" aria-labelledby="fWhoLbl"></div></div>
     <div class="field"><label for="fTags">Teglar (vergul bilan)</label><input id="fTags" placeholder="dizayn, frontend"></div>
     <div class="actions">
       <button type="button" class="btn danger" id="delTask">O'chirish</button>

@@ -7,7 +7,7 @@ Asana uslubidagi Kanban board: Google login, jamoaviy loyihalar, real-time yangi
 - Hosting: Render Static Site (`publishPath: public`)
 
 ## Ma'lumotlar modeli
-`profiles` · `projects` · `project_members (owner|member)` · `columns` · `tasks` · `task_messages` (vazifa chati)
+`profiles` · `projects` · `project_members (owner|member)` · `columns` · `tasks` · `task_assignees` (bir nechta mas'ul) · `task_messages` (vazifa chati)
 Barcha ruxsatlar Postgres RLS orqali: foydalanuvchi faqat a'zo bo'lgan loyihalarni ko'radi.
 
 ## Google login sozlash
@@ -21,3 +21,8 @@ Barcha ruxsatlar Postgres RLS orqali: foydalanuvchi faqat a'zo bo'lgan loyihalar
 - Ruxsatlar (RLS): faqat loyiha a'zolari o'qiydi va yozadi; xabar faqat o'z nomingizdan; o'chirish — muallif yoki loyiha egasi; tahrirlash yo'q.
 - Rasm biriktirish: tugma, sudrab tashlash yoki Ctrl+V. Brauzerda ≤1600px JPEG ga kichraytiriladi. Yopiq bucket `task-files` (5 MB, faqat rasm), yo'l `project_id/task_id/uuid.ext`; ko'rish — 1 soatlik imzolangan havola. Storage RLS: faqat a'zolar o'qiydi/yuklaydi; o'chirish — yuklagan yoki loyiha egasi.
 - Xabar boshqa loyihadagi vazifaga bog'lana olmaydi: `(task_id, project_id)` → `tasks(id, project_id)` FK. Vazifa o'chsa, chati ham o'chadi.
+
+## Ish oqimi va mas'ullar
+- Bosqichlar: Rejada → **Qabul qilindi** → Jarayonda → Tekshiruvda → Bajarildi (yangi loyihalarda standart; mavjudlariga qo'shildi).
+- Vazifaga bir nechta a'zo biriktiriladi (`task_assignees`); faqat loyiha a'zosi, a'zo chiqarilsa biriktirish o'zi o'chadi.
+- Vazifa nomini faqat uni yaratgan odam o'zgartiradi (DB trigger `tasks_guard_title` + UI'da qulf).
