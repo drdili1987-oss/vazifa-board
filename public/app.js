@@ -1151,6 +1151,19 @@ $('#meBtn').addEventListener('click', e => { e.stopPropagation(); $('#menu').hid
 document.addEventListener('click', e => { if (!e.target.closest('#menu')) $('#menu').hidden = true; });
 $('#mLogout').addEventListener('click', logout);
 
+// Telegram: bir martalik kod → t.me deep link
+$('#mTelegram').addEventListener('click', async () => {
+  $('#menu').hidden = true;
+  const bot = window.VAZIFA_CONFIG.telegramBot;
+  if (!bot) return toast('Telegram bot sozlanmagan');
+  const win = window.open('about:blank', '_blank'); // popup bloklanmasin: klik ichida ochamiz
+  const { data: code, error } = await sb.rpc('create_telegram_link_code');
+  if (error || !code) { win?.close(); return toast('Kod olinmadi: ' + (error?.message || '')); }
+  const url = `https://t.me/${bot}?start=${encodeURIComponent(code)}`;
+  if (win) win.location.href = url; else location.href = url;
+  toast('Telegramda «Start» tugmasini bosing (kod 10 daqiqa amal qiladi)');
+});
+
 // ---------- board events ----------
 const board = $('#board');
 let suppressClick = false;

@@ -3,5 +3,7 @@ window.VAZIFA_CONFIG = {
   supabaseUrl: 'https://hpadmjyjcndxoiddoopq.supabase.co',
   // Google OAuth Web client (public). Must list this site under "Authorized JavaScript origins".
   googleClientId: '167577429069-a92s9qfck08ccddhpkh06g1c8tbla4hg.apps.googleusercontent.com',
+  // Telegram bot username (@ belgisiz)
+  telegramBot: 'topshiriq_ai_bot',
   supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhwYWRtanlqY25keG9pZGRvb3BxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI0MDE2MjgsImV4cCI6MjEwNzk3NzYyOH0.11nrc-ShakrgxE3TaEYCoHAnH3oRBCvT-pNCP3RBPv0',
 };
