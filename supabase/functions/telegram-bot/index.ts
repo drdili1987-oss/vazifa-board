@@ -17,6 +17,9 @@ const ELEVEN_KEY = env('ELEVENLABS_API_KEY', false);
 const SITE_URL = env('SITE_URL', false) || 'https://vazifa-board.onrender.com';
 const PARSE_MODEL = env('PARSE_MODEL', false) || 'gpt-4o-mini';
 const MAX_VOICE_SEC = 300;
+// Ruxsat etilgan Telegram user ID'lar (vergul bilan). Bo'sh bo'lsa — bot hech kimga ishlamaydi (xavfsiz default).
+const ALLOWED_IDS = new Set(env('ALLOWED_TG_IDS', false).split(',').map((x) => x.trim()).filter(Boolean));
+const isAllowed = (id: unknown) => ALLOWED_IDS.has(String(id));
 const STEP = 1000; // app.js bilan bir xil
 const TZ = 'Asia/Tashkent';
 
@@ -292,6 +295,14 @@ async function handleCallback(q: any) {
 
 // deno-lint-ignore no-explicit-any
 async function handleUpdate(u: any) {
+  const from = u.callback_query?.from ?? u.message?.from;
+  if (!isAllowed(from?.id)) {
+    if (u.callback_query) return tg('answerCallbackQuery', { callback_query_id: u.callback_query.id, text: 'Ruxsat yo\'q' });
+    if (u.message?.chat?.type === 'private') {
+      return send(u.message.chat.id, `⛔ Sizga ruxsat berilmagan.\nID: <code>${from?.id}</code> — uni administratorga yuboring.`);
+    }
+    return;
+  }
   if (u.callback_query) return handleCallback(u.callback_query);
   const m = u.message;
   if (!m || m.chat?.type !== 'private') return; // guruhlarda ishlamaydi (xavfsizlik)

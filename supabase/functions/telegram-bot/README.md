@@ -15,6 +15,7 @@ Buyruqlar: `/start`, `/loyiha`, `/uzish`. Faqat shaxsiy chatda ishlaydi.
    - `TELEGRAM_BOT_TOKEN`
    - `TELEGRAM_WEBHOOK_SECRET` — tasodifiy uzun satr (`openssl rand -hex 32`)
    - `OPENAI_API_KEY`
+   - `ALLOWED_TG_IDS` — ruxsat etilgan Telegram ID'lar, vergul bilan (`123456789,987654321`). Bo'sh bo'lsa bot hech kimga ishlamaydi. Ruxsatsiz odam botga yozsa, bot unga ID'sini ko'rsatadi.
    - ixtiyoriy: `STT_PROVIDER=elevenlabs` + `ELEVENLABS_API_KEY`, `PARSE_MODEL`, `SITE_URL`
 4. **Deploy:** `supabase functions deploy telegram-bot --no-verify-jwt`
    (`--no-verify-jwt` shart: Telegram JWT yubormaydi; himoya — secret token header).
